@@ -1,0 +1,1509 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>ポーズ参照ツール</title>
+<style>
+  :root{
+    --bg: #1d2027;
+    --panel: #262b34;
+    --panel-2: #2e3440;
+    --line: #3a4150;
+    --text: #ece7dc;
+    --text-dim: #9aa1ad;
+    --accent: #d9a441;
+    --accent-soft: #d9a44133;
+    --paper: #f7f3ec;
+  }
+  *{ box-sizing: border-box; }
+  html, body{ margin:0; padding:0; height:100%; overflow:hidden; background:var(--bg); color:var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN", "Yu Gothic", "Segoe UI", sans-serif; }
+  body{ display:flex; flex-direction:column; }
+
+  header{
+    flex: 0 0 auto;
+    padding: 14px 18px 10px;
+    border-bottom: 1px solid var(--line);
+  }
+  header h1{
+    margin:0; font-size: 17px; font-weight: 700; letter-spacing: .02em;
+  }
+  header p{
+    margin: 4px 0 0; font-size: 12.5px; color: var(--text-dim);
+  }
+
+  .layout{
+    display:flex;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .canvas-wrap{
+    flex: 1 1 auto;
+    position: relative;
+    min-width: 0;
+  }
+  .canvas-wrap canvas{ display:block; width:100%; height:100%; }
+  .canvas-hint{
+    position:absolute; left:12px; bottom:10px;
+    font-size: 11.5px; color: #6b6455; background: rgba(247,243,236,.72);
+    padding: 4px 8px; border-radius: 6px; pointer-events:none;
+  }
+
+  /* ---------- 構図モード（書き出し） ---------- */
+  .compose-overlay{ position:absolute; inset:0; pointer-events:none; }
+  .mask-bar{ position:absolute; background: rgba(10,8,5,.6); pointer-events:none; }
+
+  .crop-frame{
+    position:absolute; pointer-events:none; box-shadow: inset 0 0 0 2px var(--accent);
+    touch-action:none;
+  }
+  .crop-frame.frame-interactive{ pointer-events:auto; cursor:move; }
+  .crop-handle{
+    position:absolute; width:26px; height:26px; pointer-events:none;
+    background: var(--accent); border:2px solid var(--bg); border-radius:6px;
+    touch-action:none; opacity:.45;
+  }
+  .crop-frame.frame-interactive .crop-handle{ pointer-events:auto; opacity:1; }
+  .handle-tl{ left:-19px; top:-19px; cursor:nwse-resize; }
+  .handle-tr{ right:-19px; top:-19px; cursor:nesw-resize; }
+  .handle-bl{ left:-19px; bottom:-19px; cursor:nesw-resize; }
+  .handle-br{ right:-19px; bottom:-19px; cursor:nwse-resize; }
+
+  .compose-topbar{
+    flex: 0 0 auto;
+    display:flex; flex-direction:column; gap:8px;
+    padding:10px; background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  .compose-topbar[hidden], .compose-bottombar[hidden]{ display:none; }
+  .compose-row{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+  .compose-aspects{ position:relative; }
+  .aspect-btn.active, .mode-btn.active{ background: var(--accent); color:#241a05; font-weight:700; }
+  .compose-custom-inputs{ display:flex; align-items:center; gap:6px; color:var(--text-dim); font-size:13px; }
+  .compose-custom-inputs[hidden]{ display:none; }
+  .ratio-input{
+    width:3.2em; background: var(--panel-2); border:1px solid var(--line); border-radius:5px;
+    color: var(--accent); text-align:center; font-family:inherit; font-size:13px; padding:4px 2px;
+  }
+  .compose-toggle{ display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--text-dim); }
+
+  .compose-bottombar{
+    flex: 0 0 auto;
+    display:flex; justify-content:center; padding:14px;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+  }
+  .compose-bottombar button{ padding:12px 28px; font-size:15px; }
+
+  .panel{
+    width: 372px; flex: 0 0 auto;
+    background: var(--panel);
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+  }
+  .panel-flex{
+    display:flex;
+    min-height: 100%;
+  }
+  .panel-inner{
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 14px 8px 32px 14px;
+  }
+  .panel-gutter{
+    flex: 0 0 42px;
+    position: relative;
+    touch-action: none;
+    background: rgba(255,255,255,.025);
+    display:flex; align-items:center; justify-content:center;
+    cursor: ns-resize;
+  }
+  .panel-gutter::before{
+    content:'⋮';
+    color: var(--text-dim);
+    font-size: 18px;
+    letter-spacing: 2px;
+    opacity: .55;
+    writing-mode: vertical-rl;
+  }
+  .section{
+    margin-bottom: 18px;
+  }
+  .section-title{
+    font-size: 12px; color: var(--text-dim); margin: 0 0 8px;
+  }
+
+  .row-buttons{ display:flex; gap:8px; margin-bottom:10px; }
+  button{
+    font-family: inherit; cursor:pointer; border:none; border-radius:7px;
+    background: var(--panel-2); color: var(--text);
+    padding: 8px 11px; font-size: 13px;
+  }
+  button:hover{ background: #3a4150; }
+  button:disabled{ opacity:.4; cursor:default; }
+  button:disabled:hover{ background: var(--panel-2); }
+  .btn-accent{
+    background: var(--accent); color:#241a05; font-weight:700;
+  }
+  .btn-accent:hover{ background:#e3b158; }
+  .btn-block{ width:100%; }
+
+  #figureChips{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom: 10px; }
+  .chip{
+    display:flex; align-items:center; gap:6px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 20px; padding: 5px 8px 5px 6px; font-size: 12.5px;
+    cursor:pointer;
+  }
+  .chip-active{ border-color: var(--accent); background: var(--accent-soft); }
+  .chip-dot{ width:10px; height:10px; border-radius:50%; display:inline-block; border:1px solid rgba(0,0,0,.25); }
+  .chip-del{
+    background:transparent; padding: 0 2px; font-size: 14px; line-height:1;
+    color: var(--text-dim);
+  }
+  .chip-del:hover{ background:transparent; color: var(--text); }
+
+  #palette{ display:flex; flex-wrap:wrap; gap:6px; }
+  .swatch{
+    width: 24px; height:24px; border-radius:6px; padding:0;
+    border: 1px solid rgba(0,0,0,.25);
+  }
+
+  #emptyHint{ font-size:12.5px; color:var(--text-dim); }
+
+  details{ border-top: 1px solid var(--line); padding: 8px 0; }
+  details:first-of-type{ border-top:none; }
+  summary{
+    cursor:pointer; font-size: 13px; font-weight:700; padding: 2px 0;
+    list-style: none;
+  }
+  summary::-webkit-details-marker{ display:none; }
+  summary::before{ content:'▸ '; color: var(--accent); }
+  details[open] summary::before{ content:'▾ '; }
+
+  .joint-list{ padding-top: 6px; }
+  .joint-block{ margin-bottom: 10px; }
+  .joint-name{ font-size: 12.5px; font-weight:700; color: var(--text); margin-bottom: 2px; }
+
+  .slider-row{ margin: 5px 0; }
+  .slider-top{ display:flex; justify-content:space-between; font-size:11.5px; color:var(--text-dim); }
+  .slider-value{
+    color: var(--accent); font-variant-numeric: tabular-nums;
+    background: transparent; border: 1px solid transparent; border-radius: 4px;
+    width: 3.6em; text-align: right; font-family: inherit; font-size: inherit;
+    padding: 0 2px; -moz-appearance: textfield;
+  }
+  .slider-value::-webkit-inner-spin-button, .slider-value::-webkit-outer-spin-button{
+    -webkit-appearance: none; margin: 0;
+  }
+  .slider-value:focus{ border-color: var(--accent); outline: none; background: var(--bg); }
+  input[type=range]{
+    width:100%; accent-color: var(--accent); margin: 2px 0 0;
+  }
+
+  .preset-select{
+    font-family: inherit; font-size: 13px; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 5px 6px; margin-top: 4px; width: 100%;
+  }
+
+  @media (max-width: 860px){
+    .layout{ flex-direction: column; }
+    .canvas-wrap{ flex: 0 0 42vh; }
+    .panel{ width:auto; flex: 1 1 auto; min-height: 0; border-left:none; border-top:1px solid var(--line); }
+
+    header h1{ font-size: 19px; }
+    header p{ font-size: 13.5px; }
+    .section-title{ font-size: 13.5px; }
+    button{ font-size: 15px; padding: 10px 12px; }
+    .chip{ font-size: 14px; padding: 7px 10px 7px 8px; }
+    .chip-del{ font-size: 17px; padding: 0 4px; }
+    summary{ font-size: 16px; padding: 7px 0; }
+    .joint-name{ font-size: 15px; margin-bottom: 4px; }
+    .joint-block{ margin-bottom: 16px; }
+    .slider-row{ margin: 12px 0; }
+    .slider-top{ font-size: 14px; }
+    .swatch{ width: 30px; height: 30px; }
+    input[type=range]{ height: 32px; }
+    .preset-select{ font-size: 15px; padding: 9px 8px; }
+  }
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>ポーズ参照ツール</h1>
+  <p>マネキンを配置して関節を調整し、線画ふうのポーズ参照画像を書き出せます</p>
+</header>
+
+<div id="composeTopbar" class="compose-topbar" hidden>
+  <div class="compose-row">
+    <button id="composeBack">← 戻る</button>
+    <button class="mode-btn active" id="modeCameraBtn" data-mode="camera">キャンバス操作</button>
+    <button class="mode-btn" id="modeFrameBtn" data-mode="frame">枠操作</button>
+  </div>
+  <div class="compose-row compose-aspects">
+    <button class="aspect-btn" data-ratio="1.7778">16:9</button>
+    <button class="aspect-btn" data-ratio="0.5625">9:16</button>
+    <button class="aspect-btn" data-ratio="1.3333">4:3</button>
+    <button class="aspect-btn" data-ratio="0.75">3:4</button>
+    <button class="aspect-btn" data-ratio="custom">◯:◯</button>
+    <button class="aspect-btn" data-ratio="free">フリー</button>
+    <div class="compose-custom-inputs" id="customRatioWrap" hidden>
+      <input type="text" id="customRatioW" inputmode="decimal" placeholder="幅" class="ratio-input">
+      <span>：</span>
+      <input type="text" id="customRatioH" inputmode="decimal" placeholder="高さ" class="ratio-input">
+    </div>
+  </div>
+  <div class="compose-row">
+    <label class="compose-toggle"><input type="checkbox" id="toggleGrid" checked> グリッドを含める</label>
+    <label class="compose-toggle"><input type="checkbox" id="toggleTransparent"> 背景を透明にする</label>
+  </div>
+</div>
+
+<div class="layout" id="layoutRoot">
+  <div class="canvas-wrap">
+    <canvas id="view"></canvas>
+
+    <div id="composeOverlay" class="compose-overlay" hidden>
+      <div class="mask-bar" id="maskTop"></div>
+      <div class="mask-bar" id="maskBottom"></div>
+      <div class="mask-bar" id="maskLeft"></div>
+      <div class="mask-bar" id="maskRight"></div>
+
+      <div class="crop-frame" id="cropFrame">
+        <div class="crop-handle handle-tl" data-handle="tl"></div>
+        <div class="crop-handle handle-tr" data-handle="tr"></div>
+        <div class="crop-handle handle-bl" data-handle="bl"></div>
+        <div class="crop-handle handle-br" data-handle="br"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+   <div class="panel-flex">
+    <div class="panel-inner">
+
+    <div class="section">
+      <div class="row-buttons">
+        <button id="undoBtn" class="btn-block">↶ 元に戻す</button>
+        <button id="redoBtn" class="btn-block">↷ やり直す</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">図形</div>
+      <div class="row-buttons">
+        <button id="addMannequin" class="btn-block">＋ マネキン</button>
+        <button id="addProp" class="btn-block">＋ 小物</button>
+      </div>
+      <label class="compose-toggle" style="margin:8px 0;"><input type="checkbox" id="toggleSkeleton"> 骨格ライン（赤線）を表示</label>
+      <div id="figureChips"></div>
+      <div id="palette"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">選択中の図形</div>
+      <div class="row-buttons">
+        <button id="resetPose" class="btn-block">ポーズをリセット</button>
+      </div>
+      <div id="emptyHint">「＋ マネキン」または「＋ 小物」で図形を追加してください</div>
+      <div id="jointsPanel"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">保存・読み込み</div>
+      <div class="row-buttons">
+        <button id="saveJson" class="btn-block">JSON保存</button>
+        <button id="loadJson" class="btn-block">JSON読込</button>
+      </div>
+      <input type="file" id="loadJsonFile" accept="application/json,.json" style="display:none">
+      <button id="exportPng" class="btn-accent btn-block" style="margin-top:8px;">画像を書き出し</button>
+    </div>
+
+    </div>
+    <div class="panel-gutter" title="ここをドラッグでスクロール"></div>
+   </div>
+  </div>
+</div>
+
+<div id="composeBottombar" class="compose-bottombar" hidden>
+  <button id="composeSave" class="btn-accent">これで保存</button>
+</div>
+
+<script type="importmap">
+
+
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ---------- 定数 ---------- */
+const LINE_COLOR = 0x2a2118;
+const PAPER_COLOR = 0xf7f3ec;
+const GRID_COLOR = 0xcfc8ba;
+const SKELETON_COLOR = 0xe0303a;
+const JOINT_R = 0.045;
+const POS_MULT = 0.03;
+const STAND_Y = 0.87;
+
+const PALETTE = [
+  '#f4ede0', '#8ec6d9', '#e7a26b', '#a3c98f',
+  '#c98fc0', '#e6c85c', '#d98f8f', '#9a9a9a'
+];
+
+/* ---------- 小物の武器プリセット（数値は m 単位） ---------- */
+const PROP_PRESETS = {
+  sword:  { label: '剣', parts: [
+    { key: 'handle', label: '持ち手',   shape: 'box', length: 0.18, width: 0.035, depth: 0.03 },
+    { key: 'attack', label: '攻撃部分', shape: 'box', length: 0.65, width: 0.05,  depth: 0.01 }
+  ]},
+  spear:  { label: '槍', parts: [
+    { key: 'handle', label: '持ち手',   shape: 'box', length: 1.4,  width: 0.03,  depth: 0.03 },
+    { key: 'attack', label: '攻撃部分', shape: 'box', length: 0.25, width: 0.05,  depth: 0.015 }
+  ]},
+  hammer: { label: 'ハンマー', parts: [
+    { key: 'handle', label: '持ち手',   shape: 'box', length: 0.5,  width: 0.035, depth: 0.035 },
+    { key: 'attack', label: '攻撃部分', shape: 'box', length: 0.2,  width: 0.15,  depth: 0.15 }
+  ]},
+  axe:    { label: '斧', parts: [
+    { key: 'handle', label: '持ち手',   shape: 'box', length: 0.6,  width: 0.035, depth: 0.035 },
+    { key: 'attack', label: '攻撃部分', shape: 'box', length: 0.22, width: 0.18,  depth: 0.035 }
+  ]},
+  stick:    { label: '棒',     parts: [ { key: 'body', label: '本体', shape: 'cylinder', length: 0.55, width: 0.05,  depth: 0.05 } ]},
+  shield:   { label: '盾',     parts: [ { key: 'body', label: '本体', shape: 'box',      length: 0.5,  width: 0.35, depth: 0.04 } ]},
+  ball:     { label: '球',     parts: [ { key: 'body', label: '本体', shape: 'sphere',   length: 0.22, width: 0.22, depth: 0.22 } ]},
+  cuboid:   { label: '直方体', parts: [ { key: 'body', label: '本体', shape: 'box',      length: 0.3,  width: 0.3,  depth: 0.3 } ]},
+  cylinder: { label: '円柱',   parts: [ { key: 'body', label: '本体', shape: 'cylinder', length: 0.4,  width: 0.14, depth: 0.14 } ]},
+  cone:     { label: '三角錐', parts: [ { key: 'body', label: '本体', shape: 'cone3',    length: 0.4,  width: 0.22, depth: 0.22 } ]}
+};
+const PROP_PRESET_ORDER = ['sword', 'spear', 'hammer', 'axe', 'stick', 'shield', 'ball', 'cuboid', 'cylinder', 'cone'];
+
+function clonePresetSizes (preset) {
+  const sizes = {};
+  preset.parts.forEach((p) => { sizes[p.key] = { length: p.length, width: p.width, depth: p.depth }; });
+  return sizes;
+}
+
+/* ---------- 関節の定義（グループ・ラベル・可動域） ---------- */
+function buildJointDefs () {
+  const defs = [
+    { group: '体幹', key: 'pelvis', label: '骨盤', axes: [
+      { axis: 'x', label: '前後の傾き', min: -180, max: 180 },
+      { axis: 'z', label: '左右の傾き', min: -180, max: 180 }
+    ]},
+    { group: '体幹', key: 'spine', label: '背骨', axes: [
+      { axis: 'x', label: '前後に曲げる', min: -60, max: 170 },
+      { axis: 'y', label: 'ひねる', min: -60, max: 60 },
+      { axis: 'z', label: '横に曲げる', min: -30, max: 30 }
+    ]},
+    { group: '体幹', key: 'neck', label: '首', axes: [
+      { axis: 'x', label: '上下', min: -30, max: 30 },
+      { axis: 'y', label: '左右に向く', min: -90, max: 90 }
+    ]},
+    { group: '体幹', key: 'head', label: '頭', axes: [
+      { axis: 'x', label: 'うなずき', min: -20, max: 30 },
+      { axis: 'z', label: 'かしげる', min: -25, max: 25 }
+    ]}
+  ];
+
+  for (const side of ['L', 'R']) {
+    const sideLabel = side === 'L' ? '左' : '右';
+    // 腕はキー(L/R)と解剖学的な左右が逆だったため、armSideで解剖学的な左右に統一する（R=右腕、L=左腕）
+    const armSide = side === 'L' ? 'R' : 'L';
+    const armLabel = armSide === 'L' ? '左' : '右';
+    const shoulderZ = armSide === 'R' ? { min: -220, max: 70 } : { min: -70, max: 220 };
+    defs.push(
+      { group: armLabel + '腕', key: armSide + 'Shoulder', label: armLabel + '肩', axes: [
+        { axis: 'x', label: '前後に振る', min: -100, max: 220, invert: true },
+        { axis: 'z', label: '横に上げる', min: shoulderZ.min, max: shoulderZ.max },
+        { axis: 'y', label: 'ひねる', min: -80, max: 80 }
+      ]},
+      { group: armLabel + '腕', key: armSide + 'Elbow', label: armLabel + '肘', axes: [
+        { axis: 'x', label: '曲げる', min: 0, max: 150, invert: true }
+      ]},
+      { group: armLabel + '腕', key: armSide + 'Wrist', label: armLabel + '手首', axes: [
+        { axis: 'x', label: '上下', min: -75, max: 90, invert: true },
+        { axis: 'z', label: '左右', min: -60, max: 60 }
+      ]},
+      { group: sideLabel + '脚', key: side + 'Hip', label: sideLabel + '股関節', axes: [
+        { axis: 'x', label: '前後に振る', min: -100, max: 170, invert: true },
+        { axis: 'z', label: '横に開く', min: -100, max: 100 },
+        { axis: 'y', label: 'ひねる', min: -50, max: 50 }
+      ]},
+      { group: sideLabel + '脚', key: side + 'Knee', label: sideLabel + '膝', axes: [
+        { axis: 'x', label: '曲げる', min: 0, max: 150 }
+      ]},
+      { group: sideLabel + '脚', key: side + 'Ankle', label: sideLabel + '足首', axes: [
+        { axis: 'x', label: '上下', min: -40, max: 40, invert: true }
+      ]}
+    );
+  }
+  return defs;
+}
+const JOINT_DEFS = buildJointDefs();
+const JOINT_GROUP_ORDER = ['体幹', '左腕', '右腕', '左脚', '右脚'];
+
+/* ---------- 描画ヘルパー：塗り＋アウトラインの線画風メッシュ ---------- */
+function outlineGroup (geometry, colorHex, outlineScale = 1.07) {
+  const g = new THREE.Group();
+  const fillMat = new THREE.MeshBasicMaterial({ color: colorHex });
+  g.add(new THREE.Mesh(geometry, fillMat));
+  const lineMat = new THREE.MeshBasicMaterial({ color: LINE_COLOR, side: THREE.BackSide });
+  const outline = new THREE.Mesh(geometry, lineMat);
+  outline.scale.setScalar(outlineScale);
+  g.add(outline);
+  g.userData.fillMat = fillMat;
+  return g;
+}
+
+function setGroupColor (group, colorHex) {
+  group.traverse((obj) => {
+    if (obj.userData && obj.userData.fillMat) {
+      obj.userData.fillMat.color.set(colorHex);
+    }
+  });
+}
+
+function boneSegment (length, rTop, rBot, colorHex, dir = -1) {
+  const geo = new THREE.CylinderGeometry(rTop, rBot, length, 12);
+  const seg = outlineGroup(geo, colorHex);
+  seg.position.y = (dir * length) / 2;
+  return seg;
+}
+
+function boxPart (w, h, d, colorHex) {
+  return outlineGroup(new THREE.BoxGeometry(w, h, d), colorHex);
+}
+
+function jointSphere (colorHex, r = JOINT_R) {
+  return outlineGroup(new THREE.SphereGeometry(r, 14, 10), colorHex);
+}
+
+function makeFist (colorHex) {
+  const g = new THREE.Group();
+  g.add(outlineGroup(new THREE.BoxGeometry(0.062, 0.07, 0.055), colorHex));
+  const thumb = outlineGroup(new THREE.CylinderGeometry(0.014, 0.017, 0.045, 8), colorHex);
+  thumb.rotation.x = Math.PI / 2.3;
+  thumb.position.set(0, 0.018, 0.045);
+  g.add(thumb);
+  return g;
+}
+
+/* ---------- マネキン生成 ---------- */
+function createMannequin (colorHex) {
+  const joints = {};
+
+  const pelvis = new THREE.Group();
+  const pelvisLean = new THREE.Group();
+  pelvis.add(pelvisLean);
+  joints.pelvis = pelvisLean;
+  const pelvisBox = boxPart(0.30, 0.16, 0.18, colorHex);
+  pelvisBox.position.y = -0.02;
+  pelvisLean.add(pelvisBox);
+
+  const spine = new THREE.Group();
+  spine.position.y = 0.07;
+  pelvisLean.add(spine);
+  joints.spine = spine;
+  const torsoBox = boxPart(0.32, 0.38, 0.18, colorHex);
+  torsoBox.position.y = 0.19;
+  spine.add(torsoBox);
+
+  const neck = new THREE.Group();
+  neck.position.y = 0.38;
+  spine.add(neck);
+  joints.neck = neck;
+  const neckSeg = boneSegment(0.08, 0.05, 0.045, colorHex, 1);
+  neck.add(neckSeg);
+
+  const head = new THREE.Group();
+  head.position.y = 0.08;
+  neck.add(head);
+  joints.head = head;
+  const headSphere = jointSphere(colorHex, 0.13);
+  headSphere.position.y = 0.13;
+  head.add(headSphere);
+  const nose = outlineGroup(new THREE.CylinderGeometry(0.02, 0.02, 0.05, 8), colorHex, 1.55);
+  nose.rotation.x = Math.PI / 2;
+  nose.position.set(0, 0.115, 0.125);
+  head.add(nose);
+
+  const shoulderY = 0.34;
+  for (const side of ['L', 'R']) {
+    const signX = side === 'L' ? -1 : 1;
+    const legSignX = -signX;
+    const sideLabel = side;
+    // 腕はキー(L/R)と解剖学的な左右が逆だったため、armSideで解剖学的な左右に統一する（R=右腕、L=左腕）。位置(signX)は変更しない＝見た目は変わらない。
+    const armSide = side === 'L' ? 'R' : 'L';
+
+    const shoulder = new THREE.Group();
+    shoulder.position.set(signX * 0.19, shoulderY, 0);
+    spine.add(shoulder);
+    joints[armSide + 'Shoulder'] = shoulder;
+    shoulder.add(jointSphere(colorHex, 0.045));
+    shoulder.add(boneSegment(0.26, 0.05, 0.045, colorHex, -1));
+
+    const elbow = new THREE.Group();
+    elbow.position.y = -0.26;
+    shoulder.add(elbow);
+    joints[armSide + 'Elbow'] = elbow;
+    elbow.add(jointSphere(colorHex, 0.04));
+    elbow.add(boneSegment(0.24, 0.045, 0.038, colorHex, -1));
+
+    const wrist = new THREE.Group();
+    wrist.position.y = -0.24;
+    elbow.add(wrist);
+    joints[armSide + 'Wrist'] = wrist;
+    const hand = makeFist(colorHex);
+    hand.position.y = -0.05;
+    wrist.add(hand);
+
+    const hip = new THREE.Group();
+    hip.position.set(legSignX * 0.09, -0.08, 0);
+    pelvisLean.add(hip);
+    joints[sideLabel + 'Hip'] = hip;
+    hip.add(jointSphere(colorHex, 0.055));
+    hip.add(boneSegment(0.42, 0.065, 0.055, colorHex, -1));
+
+    const knee = new THREE.Group();
+    knee.position.y = -0.42;
+    hip.add(knee);
+    joints[sideLabel + 'Knee'] = knee;
+    knee.add(jointSphere(colorHex, 0.05));
+    knee.add(boneSegment(0.40, 0.05, 0.045, colorHex, -1));
+
+    const ankle = new THREE.Group();
+    ankle.position.y = -0.40;
+    knee.add(ankle);
+    joints[sideLabel + 'Ankle'] = ankle;
+    const foot = boxPart(0.09, 0.045, 0.20, colorHex);
+    foot.position.set(0, -0.02, 0.05);
+    ankle.add(foot);
+  }
+
+  pelvis.position.y = STAND_Y;
+
+  return { type: 'mannequin', root: pelvis, group: pelvis, joints, colorHex };
+}
+
+/* ---------- 小物（武器・形状プリセット対応）生成 ---------- */
+function buildPartMesh (shape, length, width, depth, colorHex) {
+  if (shape === 'cylinder') return outlineGroup(new THREE.CylinderGeometry(width / 2, width / 2, length, 14), colorHex);
+  if (shape === 'sphere') return outlineGroup(new THREE.SphereGeometry(width / 2, 16, 12), colorHex);
+  if (shape === 'cone3') return outlineGroup(new THREE.ConeGeometry(width / 2, length, 3), colorHex);
+  return outlineGroup(new THREE.BoxGeometry(width, length, depth), colorHex);
+}
+
+function disposePropParts (root) {
+  root.children.slice().forEach((child) => {
+    root.remove(child);
+    child.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+    });
+  });
+}
+
+function rebuildPropGeometry (fig) {
+  disposePropParts(fig.root);
+  const preset = PROP_PRESETS[fig.presetKey] || PROP_PRESETS.stick;
+  const total = preset.parts.reduce((sum, p) => sum + ((fig.sizes[p.key] && fig.sizes[p.key].length) || p.length), 0);
+  let cursor = -total / 2;
+  const partMeshes = {};
+  preset.parts.forEach((p) => {
+    const s = fig.sizes[p.key] || { length: p.length, width: p.width, depth: p.depth };
+    const mesh = buildPartMesh(p.shape, s.length, s.width, s.depth, fig.colorHex);
+    mesh.position.y = cursor + s.length / 2;
+    cursor += s.length;
+    fig.root.add(mesh);
+    partMeshes[p.key] = mesh;
+  });
+  fig.partMeshes = partMeshes;
+}
+
+function createProp (colorHex, presetKey, sizes) {
+  const key = PROP_PRESETS[presetKey] ? presetKey : 'stick';
+  const fig = {
+    type: 'prop',
+    root: new THREE.Group(),
+    colorHex,
+    presetKey: key,
+    sizes: sizes || clonePresetSizes(PROP_PRESETS[key])
+  };
+  fig.group = fig.root;
+  fig.root.position.set(0, 1.0, 0.3);
+  rebuildPropGeometry(fig);
+  return fig;
+}
+
+/* ---------- シーン構築 ---------- */
+function initScene (canvas, onFrame) {
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(PAPER_COLOR);
+
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 400);
+  camera.position.set(1.6, 1.5, 2.4);
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0.9, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.update();
+
+  const stage = new THREE.Group();
+  scene.add(stage);
+
+  const grid = new THREE.GridHelper(3, 12, GRID_COLOR, GRID_COLOR);
+  stage.add(grid);
+
+  function resize () {
+    const wrap = canvas.parentElement;
+    const w = wrap.clientWidth;
+    const h = wrap.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function tick () {
+    controls.update();
+    if (onFrame) onFrame();
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
+  }
+  tick();
+
+  return { scene, camera, renderer, controls, stage, grid, resize };
+}
+
+/* ---------- UI 構築 ---------- */
+function el (tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function main () {
+  const canvas = document.getElementById('view');
+  // initScene内でtick()が初回同期的に呼ばれ、onFrameコールバック(updateAllSkeletons)が
+  // すぐ実行されるため、参照する変数はinitScene呼び出し前に宣言しておく必要がある。
+  let skeletonVisible = false;
+  const { camera, controls, stage, renderer, scene, grid, resize } = initScene(canvas, () => updateAllSkeletons());
+
+  const figures = [];
+  let selectedId = null;
+  let nextId = 1;
+  let nextMannequinNum = 1;
+  let nextPropNum = 1;
+  let undoStack = [];
+  let redoStack = [];
+  const _skelVec = new THREE.Vector3();
+
+  function serializeState () {
+    return {
+      v: 1,
+      nextId, nextMannequinNum, nextPropNum, selectedId,
+      figures: figures.map((fig) => {
+        const base = {
+          id: fig.id, label: fig.label, hex: fig.hex, type: fig.type,
+          position: { x: fig.group.position.x, y: fig.group.position.y, z: fig.group.position.z }
+        };
+        if (fig.type === 'mannequin') {
+          base.scale = fig.group.scale.x;
+          base.turnY = fig.root.rotation.y;
+          base.joints = {};
+          Object.entries(fig.joints).forEach(([key, obj]) => {
+            base.joints[key] = [obj.rotation.x, obj.rotation.y, obj.rotation.z];
+          });
+        } else {
+          base.rotation = { x: fig.group.rotation.x, y: fig.group.rotation.y, z: fig.group.rotation.z };
+          base.presetKey = fig.presetKey;
+          base.sizes = fig.sizes;
+          base.baseLabel = fig.baseLabel;
+        }
+        return base;
+      })
+    };
+  }
+
+  // マネキンの関節階層（親子関係）から自動でボーン（関節同士を結ぶ線分）のペアを求める。
+  // joints内のオブジェクトの親が同じjoints内の別の関節であれば、その2点を線で結ぶ。
+  function findSkeletonBones (joints) {
+    const values = new Set(Object.values(joints));
+    const bones = [];
+    Object.entries(joints).forEach(([key, obj]) => {
+      if (key === 'LShoulder' || key === 'RShoulder') return; // 鎖骨は肩-肩の直線で表すため、背骨への接続は対象外にする
+      if (obj.parent && values.has(obj.parent)) bones.push([obj.parent, obj]);
+    });
+    if (joints.LShoulder && joints.RShoulder) bones.push([joints.LShoulder, joints.RShoulder]); // 鎖骨ライン（肩から肩）
+    return bones;
+  }
+
+  function makeEyeMarker () {
+    const geometry = new THREE.CircleGeometry(0.013, 16);
+    const material = new THREE.MeshBasicMaterial({ color: SKELETON_COLOR, depthTest: false, transparent: true, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.renderOrder = 999;
+    return mesh;
+  }
+
+  function createSkeletonLine (fig) {
+    const bones = findSkeletonBones(fig.joints);
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(bones.length * 6), 3));
+    const material = new THREE.LineBasicMaterial({ color: SKELETON_COLOR, depthTest: false, transparent: true });
+    const line = new THREE.LineSegments(geometry, material);
+    line.frustumCulled = false;
+    line.renderOrder = 999;
+    line.visible = skeletonVisible;
+    fig.skeletonBones = bones;
+    fig.skeletonLine = line;
+    stage.add(line);
+
+    if (fig.joints.head) {
+      const leftEye = makeEyeMarker();
+      leftEye.position.set(0.055, 0.145, 0.12);
+      leftEye.visible = skeletonVisible;
+      const rightEye = makeEyeMarker();
+      rightEye.position.set(-0.055, 0.145, 0.12);
+      rightEye.visible = skeletonVisible;
+      fig.joints.head.add(leftEye);
+      fig.joints.head.add(rightEye);
+      fig.eyeMarkers = [leftEye, rightEye];
+    }
+  }
+
+  function disposeSkeletonLine (fig) {
+    if (fig.skeletonLine) {
+      stage.remove(fig.skeletonLine);
+      fig.skeletonLine.geometry.dispose();
+      fig.skeletonLine.material.dispose();
+      fig.skeletonLine = null;
+      fig.skeletonBones = null;
+    }
+    if (fig.eyeMarkers) {
+      fig.eyeMarkers.forEach((m) => {
+        m.parent && m.parent.remove(m);
+        m.geometry.dispose();
+        m.material.dispose();
+      });
+      fig.eyeMarkers = null;
+    }
+  }
+
+  function updateAllSkeletons () {
+    if (!skeletonVisible) return;
+    figures.forEach((fig) => {
+      if (!fig.skeletonLine || !fig.skeletonBones) return;
+      const pos = fig.skeletonLine.geometry.attributes.position;
+      fig.skeletonBones.forEach(([a, b], i) => {
+        a.getWorldPosition(_skelVec);
+        stage.worldToLocal(_skelVec);
+        pos.setXYZ(i * 2, _skelVec.x, _skelVec.y, _skelVec.z);
+        b.getWorldPosition(_skelVec);
+        stage.worldToLocal(_skelVec);
+        pos.setXYZ(i * 2 + 1, _skelVec.x, _skelVec.y, _skelVec.z);
+      });
+      pos.needsUpdate = true;
+    });
+  }
+
+  function clearAllFigures () {
+    figures.slice().forEach((fig) => {
+      disposeSkeletonLine(fig);
+      stage.remove(fig.group);
+      fig.group.traverse((obj) => {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) obj.material.dispose();
+      });
+    });
+    figures.length = 0;
+  }
+
+  function applyState (state) {
+    clearAllFigures();
+    nextId = state.nextId;
+    nextMannequinNum = state.nextMannequinNum;
+    nextPropNum = state.nextPropNum;
+    state.figures.forEach((fs) => {
+      const colorInt = parseInt(String(fs.hex).replace('#', '0x'));
+      let built, baseLabel;
+      if (fs.type === 'mannequin') {
+        built = createMannequin(colorInt);
+      } else {
+        const presetKey = (fs.presetKey && PROP_PRESETS[fs.presetKey]) ? fs.presetKey : 'stick';
+        const sizes = fs.sizes || clonePresetSizes(PROP_PRESETS[presetKey]);
+        built = createProp(colorInt, presetKey, sizes);
+        baseLabel = fs.baseLabel || fs.label;
+      }
+      const fig = { id: fs.id, label: fs.label, hex: fs.hex, baseLabel, ...built };
+      fig.group.position.set(fs.position.x, fs.position.y, fs.position.z);
+      if (fs.type === 'mannequin') {
+        fig.group.scale.setScalar(fs.scale);
+        fig.root.rotation.y = fs.turnY;
+        Object.entries(fs.joints || {}).forEach(([key, rot]) => {
+          if (fig.joints[key]) fig.joints[key].rotation.set(rot[0], rot[1], rot[2]);
+        });
+        createSkeletonLine(fig);
+      } else {
+        fig.group.rotation.set(fs.rotation.x, fs.rotation.y, fs.rotation.z);
+      }
+      figures.push(fig);
+      stage.add(built.group);
+    });
+    const restoredId = state.selectedId;
+    selectedId = figures.some((f) => f.id === restoredId) ? restoredId : (figures.length ? figures[figures.length - 1].id : null);
+    renderChips();
+    renderJointsPanel();
+    updateUndoRedoButtons();
+  }
+
+  function pushUndoSnapshot () {
+    undoStack.push(serializeState());
+    redoStack.length = 0;
+    updateUndoRedoButtons();
+  }
+
+  function undo () {
+    if (!undoStack.length) return;
+    redoStack.push(serializeState());
+    applyState(undoStack.pop());
+  }
+
+  function redo () {
+    if (!redoStack.length) return;
+    undoStack.push(serializeState());
+    applyState(redoStack.pop());
+  }
+
+  function updateUndoRedoButtons () {
+    const undoBtn = document.getElementById('undoBtn');
+    const redoBtn = document.getElementById('redoBtn');
+    if (undoBtn) undoBtn.disabled = undoStack.length === 0;
+    if (redoBtn) redoBtn.disabled = redoStack.length === 0;
+  }
+
+  const chipsWrap = document.getElementById('figureChips');
+  const paletteWrap = document.getElementById('palette');
+  const jointsWrap = document.getElementById('jointsPanel');
+  const emptyHint = document.getElementById('emptyHint');
+
+  PALETTE.forEach((hex) => {
+    const b = el('button', 'swatch');
+    b.style.background = hex;
+    b.title = hex;
+    b.addEventListener('click', () => {
+      const fig = figures.find((f) => f.id === selectedId);
+      if (!fig) return;
+      pushUndoSnapshot();
+      fig.hex = hex;
+      fig.colorHex = hex;
+      setGroupColor(fig.group, hex);
+      renderChips();
+    });
+    paletteWrap.appendChild(b);
+  });
+
+  function addFigure (kind) {
+    pushUndoSnapshot();
+    const hex = PALETTE[figures.length % PALETTE.length];
+    const colorInt = parseInt(hex.replace('#', '0x'));
+    let built, label, baseLabel;
+    if (kind === 'mannequin') {
+      built = createMannequin(colorInt);
+      label = 'マネキン' + nextMannequinNum++;
+    } else {
+      baseLabel = '小物' + nextPropNum++;
+      built = createProp(colorInt, 'stick', clonePresetSizes(PROP_PRESETS.stick));
+      label = baseLabel + '(' + PROP_PRESETS.stick.label + ')';
+    }
+    const id = nextId++;
+    if (kind === 'mannequin' && figures.filter((f) => f.type === 'mannequin').length > 0) {
+      built.root.position.x += 0.7 * figures.filter((f) => f.type === 'mannequin').length;
+    }
+    const fig = { id, label, hex, baseLabel, ...built };
+    figures.push(fig);
+    stage.add(built.group);
+    if (kind === 'mannequin') createSkeletonLine(fig);
+    selectFigure(id);
+    renderChips();
+  }
+
+  function removeFigure (id) {
+    const fig = figures.find((f) => f.id === id);
+    if (!fig) return;
+    if (!confirm(fig.label + ' を削除します。よろしいですか？')) return;
+    pushUndoSnapshot();
+    const idx = figures.findIndex((f) => f.id === id);
+    disposeSkeletonLine(fig);
+    stage.remove(fig.group);
+    fig.group.traverse((obj) => {
+      if (obj.geometry) obj.geometry.dispose();
+      if (obj.material) obj.material.dispose();
+    });
+    figures.splice(idx, 1);
+    if (selectedId === id) {
+      selectedId = figures.length ? figures[figures.length - 1].id : null;
+    }
+    renderChips();
+    renderJointsPanel();
+  }
+
+  function selectFigure (id) {
+    selectedId = id;
+    renderChips();
+    renderJointsPanel();
+  }
+
+  function renderChips () {
+    chipsWrap.innerHTML = '';
+    figures.forEach((fig) => {
+      const chip = el('div', 'chip' + (fig.id === selectedId ? ' chip-active' : ''));
+      const dot = el('span', 'chip-dot');
+      dot.style.background = fig.hex;
+      chip.appendChild(dot);
+      chip.appendChild(el('span', null, fig.label));
+      const del = el('button', 'chip-del', '×');
+      del.addEventListener('click', (e) => { e.stopPropagation(); removeFigure(fig.id); });
+      chip.appendChild(del);
+      chip.addEventListener('click', () => selectFigure(fig.id));
+      chipsWrap.appendChild(chip);
+    });
+  }
+
+  function renderJointsPanel () {
+    jointsWrap.innerHTML = '';
+    const fig = figures.find((f) => f.id === selectedId);
+    emptyHint.style.display = fig ? 'none' : 'block';
+    if (!fig) return;
+
+    const transformDetails = el('details');
+    transformDetails.open = false;
+    transformDetails.appendChild(el('summary', null, '位置・大きさ'));
+    const transformBody = el('div', 'joint-list');
+    transformDetails.appendChild(transformBody);
+
+    const yOffset = fig.type === 'mannequin' ? STAND_Y : 0;
+    const posSpecs = [
+      { label: 'X 位置（左右）', get: () => Math.round(fig.group.position.x / POS_MULT), set: (v) => { fig.group.position.x = v * POS_MULT; }, min: -100, max: 100, step: 1 },
+      { label: 'Y 位置（高さ・空中）', get: () => Math.round((fig.group.position.y - yOffset) / POS_MULT), set: (v) => { fig.group.position.y = yOffset + v * POS_MULT; }, min: -100, max: 100, step: 1 },
+      { label: 'Z 位置（前後）', get: () => Math.round(fig.group.position.z / POS_MULT), set: (v) => { fig.group.position.z = v * POS_MULT; }, min: -100, max: 100, step: 1 }
+    ];
+    posSpecs.forEach((spec) => transformBody.appendChild(buildSliderRow(spec.label, spec.min, spec.max, spec.step, spec.get(), spec.set)));
+
+    if (fig.type === 'mannequin') {
+      transformBody.appendChild(buildSliderRow(
+        '向き（回転）', -180, 180, 1,
+        THREE.MathUtils.radToDeg(fig.root.rotation.y),
+        (v) => { fig.root.rotation.y = THREE.MathUtils.degToRad(v); }
+      ));
+      transformBody.appendChild(buildSliderRow(
+        '大きさ（1/10〜×10）', -100, 100, 1,
+        Math.round(Math.log10(fig.group.scale.x) * 100),
+        (v) => { fig.group.scale.setScalar(Math.pow(10, v / 100)); }
+      ));
+    } else {
+      const rotSpecs = [
+        { label: '回転 X', get: () => THREE.MathUtils.radToDeg(fig.group.rotation.x), set: (v) => { fig.group.rotation.x = THREE.MathUtils.degToRad(v); }, min: -180, max: 180, step: 1 },
+        { label: '回転 Y', get: () => THREE.MathUtils.radToDeg(fig.group.rotation.y), set: (v) => { fig.group.rotation.y = THREE.MathUtils.degToRad(v); }, min: -180, max: 180, step: 1 },
+        { label: '回転 Z', get: () => THREE.MathUtils.radToDeg(fig.group.rotation.z), set: (v) => { fig.group.rotation.z = THREE.MathUtils.degToRad(v); }, min: -180, max: 180, step: 1 }
+      ];
+      rotSpecs.forEach((spec) => transformBody.appendChild(buildSliderRow(spec.label, spec.min, spec.max, spec.step, spec.get(), spec.set)));
+    }
+
+    jointsWrap.appendChild(transformDetails);
+
+    if (fig.type === 'prop') {
+      const shapeDetails = el('details');
+      shapeDetails.open = false;
+      shapeDetails.appendChild(el('summary', null, '形状（プリセット）'));
+      const shapeBody = el('div', 'joint-list');
+      shapeDetails.appendChild(shapeBody);
+
+      const presetRow = el('div', 'slider-row');
+      presetRow.appendChild(el('div', 'joint-name', 'プリセット'));
+      const select = document.createElement('select');
+      select.className = 'preset-select';
+      PROP_PRESET_ORDER.forEach((key) => {
+        const opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = PROP_PRESETS[key].label;
+        if (key === fig.presetKey) opt.selected = true;
+        select.appendChild(opt);
+      });
+      select.addEventListener('change', () => {
+        pushUndoSnapshot();
+        fig.presetKey = select.value;
+        fig.sizes = clonePresetSizes(PROP_PRESETS[fig.presetKey]);
+        fig.label = (fig.baseLabel || fig.label) + '(' + PROP_PRESETS[fig.presetKey].label + ')';
+        rebuildPropGeometry(fig);
+        renderChips();
+        renderJointsPanel();
+      });
+      presetRow.appendChild(select);
+      shapeBody.appendChild(presetRow);
+
+      const preset = PROP_PRESETS[fig.presetKey] || PROP_PRESETS.stick;
+      preset.parts.forEach((p) => {
+        const partBlock = el('div', 'joint-block');
+        partBlock.appendChild(el('div', 'joint-name', p.label));
+        const s = fig.sizes[p.key];
+        if (p.shape === 'sphere') {
+          partBlock.appendChild(buildSliderRow('大きさ（cm）', 1, 100, 1, s.width * 100, (v) => {
+            s.width = v / 100; s.depth = s.width; s.length = s.width;
+            rebuildPropGeometry(fig);
+          }));
+        } else if (p.shape === 'cylinder' || p.shape === 'cone3') {
+          partBlock.appendChild(buildSliderRow(p.shape === 'cone3' ? '高さ（cm）' : '長さ（cm）', 2, 200, 1, s.length * 100, (v) => {
+            s.length = v / 100;
+            rebuildPropGeometry(fig);
+          }));
+          partBlock.appendChild(buildSliderRow('太さ（cm）', 1, 80, 1, s.width * 100, (v) => {
+            s.width = v / 100; s.depth = s.width;
+            rebuildPropGeometry(fig);
+          }));
+        } else {
+          partBlock.appendChild(buildSliderRow('長さ（cm）', 1, 200, 1, s.length * 100, (v) => {
+            s.length = v / 100;
+            rebuildPropGeometry(fig);
+          }));
+          partBlock.appendChild(buildSliderRow('横幅（cm）', 1, 80, 1, s.width * 100, (v) => {
+            s.width = v / 100;
+            rebuildPropGeometry(fig);
+          }));
+          partBlock.appendChild(buildSliderRow('厚さ（cm）', 1, 80, 1, s.depth * 100, (v) => {
+            s.depth = v / 100;
+            rebuildPropGeometry(fig);
+          }));
+        }
+        shapeBody.appendChild(partBlock);
+      });
+
+      jointsWrap.appendChild(shapeDetails);
+      return;
+    }
+
+    JOINT_GROUP_ORDER.forEach((groupName) => {
+      const defsInGroup = JOINT_DEFS.filter((d) => d.group === groupName);
+      if (!defsInGroup.length) return;
+      const details = el('details');
+      details.open = false;
+      details.appendChild(el('summary', null, groupName));
+      const body = el('div', 'joint-list');
+      defsInGroup.forEach((jd) => {
+        const jointObj = fig.joints[jd.key];
+        if (!jointObj) return;
+        const jointBlock = el('div', 'joint-block');
+        jointBlock.appendChild(el('div', 'joint-name', jd.label));
+        jd.axes.forEach((ax) => {
+          const raw = THREE.MathUtils.radToDeg(jointObj.rotation[ax.axis]);
+          const current = ax.invert ? -raw : raw;
+          const row = buildSliderRow(ax.label, ax.min, ax.max, 1, current, (v) => {
+            const physical = ax.invert ? -v : v;
+            jointObj.rotation[ax.axis] = THREE.MathUtils.degToRad(physical);
+          });
+          jointBlock.appendChild(row);
+        });
+        body.appendChild(jointBlock);
+      });
+      details.appendChild(body);
+      jointsWrap.appendChild(details);
+    });
+  }
+
+  function buildSliderRow (label, min, max, step, value, onChange) {
+    const row = el('div', 'slider-row');
+    const top = el('div', 'slider-top');
+    top.appendChild(el('span', 'slider-label', label));
+
+    const valueInput = document.createElement('input');
+    valueInput.type = 'text';
+    valueInput.className = 'slider-value';
+    valueInput.inputMode = 'decimal';
+    valueInput.enterKeyHint = 'done';
+    valueInput.autocomplete = 'off';
+    valueInput.value = String(Math.round(value * 100) / 100);
+    top.appendChild(valueInput);
+    row.appendChild(top);
+
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = String(min);
+    input.max = String(max);
+    input.step = String(step);
+    input.value = String(value);
+    input.addEventListener('pointerdown', () => { pushUndoSnapshot(); }, { once: false });
+    input.addEventListener('input', () => {
+      const v = parseFloat(input.value);
+      valueInput.value = String(Math.round(v * 100) / 100);
+      onChange(v);
+    });
+    row.appendChild(input);
+
+    valueInput.addEventListener('focus', () => {
+      pushUndoSnapshot();
+      valueInput.value = '';
+    });
+
+    function commitTypedValue () {
+      let v = parseFloat(valueInput.value);
+      if (Number.isNaN(v)) v = 0;
+      v = Math.min(max, Math.max(min, v));
+      valueInput.value = String(Math.round(v * 100) / 100);
+      input.value = String(v);
+      onChange(v);
+    }
+    valueInput.addEventListener('change', commitTypedValue);
+    valueInput.addEventListener('blur', commitTypedValue);
+    valueInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); valueInput.blur(); }
+    });
+
+    return row;
+  }
+
+  function resetSelectedPose () {
+    const fig = figures.find((f) => f.id === selectedId);
+    if (!fig) return;
+    if (!confirm(fig.label + ' のポーズをリセットします。よろしいですか？')) return;
+    pushUndoSnapshot();
+    if (fig.type === 'mannequin') {
+      Object.values(fig.joints).forEach((j) => { j.rotation.set(0, 0, 0); });
+    } else {
+      fig.group.rotation.set(0, 0, 0);
+    }
+    renderJointsPanel();
+  }
+
+  document.getElementById('addMannequin').addEventListener('click', () => addFigure('mannequin'));
+  document.getElementById('addProp').addEventListener('click', () => addFigure('prop'));
+  document.getElementById('toggleSkeleton').addEventListener('change', (e) => {
+    skeletonVisible = e.target.checked;
+    figures.forEach((fig) => {
+      if (fig.skeletonLine) fig.skeletonLine.visible = skeletonVisible;
+      if (fig.eyeMarkers) fig.eyeMarkers.forEach((m) => { m.visible = skeletonVisible; });
+    });
+  });
+  document.getElementById('resetPose').addEventListener('click', resetSelectedPose);
+  document.getElementById('undoBtn').addEventListener('click', undo);
+  document.getElementById('redoBtn').addEventListener('click', redo);
+  updateUndoRedoButtons();
+
+  document.getElementById('exportPng').addEventListener('click', openComposeMode);
+
+  /* ---------- 構図モード ---------- */
+  const headerEl = document.querySelector('header');
+  const composeOverlay = document.getElementById('composeOverlay');
+  const cropFrameEl = document.getElementById('cropFrame');
+  const maskTop = document.getElementById('maskTop');
+  const maskBottom = document.getElementById('maskBottom');
+  const maskLeft = document.getElementById('maskLeft');
+  const maskRight = document.getElementById('maskRight');
+  const toggleGridEl = document.getElementById('toggleGrid');
+  const toggleTransparentEl = document.getElementById('toggleTransparent');
+  const customRatioWrap = document.getElementById('customRatioWrap');
+  const customRatioWInput = document.getElementById('customRatioW');
+  const customRatioHInput = document.getElementById('customRatioH');
+  const composeTopbarEl = document.getElementById('composeTopbar');
+  const composeBottombarEl = document.getElementById('composeBottombar');
+  const modeCameraBtn = document.getElementById('modeCameraBtn');
+  const modeFrameBtn = document.getElementById('modeFrameBtn');
+
+  let cropRect = { x: 0, y: 0, w: 100, h: 100 };
+  let cropAspect = null;
+  let composeMode = 'camera';
+
+  function boundsSize () {
+    return { w: canvas.parentElement.clientWidth, h: canvas.parentElement.clientHeight };
+  }
+
+  function clampRect (r) {
+    const b = boundsSize();
+    r.w = Math.max(40, Math.min(r.w, b.w));
+    r.h = Math.max(40, Math.min(r.h, b.h));
+    r.x = Math.max(0, Math.min(r.x, b.w - r.w));
+    r.y = Math.max(0, Math.min(r.y, b.h - r.h));
+    return r;
+  }
+
+  function updateFrameDOM () {
+    cropFrameEl.style.left = cropRect.x + 'px';
+    cropFrameEl.style.top = cropRect.y + 'px';
+    cropFrameEl.style.width = cropRect.w + 'px';
+    cropFrameEl.style.height = cropRect.h + 'px';
+    const b = boundsSize();
+    maskTop.style.cssText = 'left:0;top:0;width:' + b.w + 'px;height:' + cropRect.y + 'px;';
+    maskBottom.style.cssText = 'left:0;top:' + (cropRect.y + cropRect.h) + 'px;width:' + b.w + 'px;height:' + Math.max(0, b.h - cropRect.y - cropRect.h) + 'px;';
+    maskLeft.style.cssText = 'left:0;top:' + cropRect.y + 'px;width:' + cropRect.x + 'px;height:' + cropRect.h + 'px;';
+    maskRight.style.cssText = 'left:' + (cropRect.x + cropRect.w) + 'px;top:' + cropRect.y + 'px;width:' + Math.max(0, b.w - cropRect.x - cropRect.w) + 'px;height:' + cropRect.h + 'px;';
+  }
+
+  function setActiveAspectButton (val) {
+    document.querySelectorAll('.aspect-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.ratio === String(val));
+    });
+  }
+
+  function applyAspect (ratio) {
+    cropAspect = ratio;
+    const b = boundsSize();
+    const maxW = b.w * 0.92, maxH = b.h * 0.92;
+    let w = maxW, h = w / ratio;
+    if (h > maxH) { h = maxH; w = h * ratio; }
+    cropRect = { x: (b.w - w) / 2, y: (b.h - h) / 2, w, h };
+    updateFrameDOM();
+  }
+
+  function setComposeMode (mode) {
+    composeMode = mode;
+    modeCameraBtn.classList.toggle('active', mode === 'camera');
+    modeFrameBtn.classList.toggle('active', mode === 'frame');
+    controls.enabled = (mode === 'camera');
+    cropFrameEl.classList.toggle('frame-interactive', mode === 'frame');
+  }
+  modeCameraBtn.addEventListener('click', () => setComposeMode('camera'));
+  modeFrameBtn.addEventListener('click', () => setComposeMode('frame'));
+
+  function openComposeMode () {
+    headerEl.hidden = true;
+    panelEl.style.display = 'none';
+    composeTopbarEl.hidden = false;
+    composeBottombarEl.hidden = false;
+    composeOverlay.hidden = false;
+    cropAspect = null;
+    customRatioWrap.hidden = true;
+    setActiveAspectButton('free');
+    setComposeMode('camera');
+    resize();
+    const b = boundsSize();
+    const w = b.w * 0.8, h = b.h * 0.8;
+    cropRect = { x: (b.w - w) / 2, y: (b.h - h) / 2, w, h };
+    updateFrameDOM();
+  }
+
+  function closeComposeMode () {
+    headerEl.hidden = false;
+    panelEl.style.display = '';
+    composeTopbarEl.hidden = true;
+    composeBottombarEl.hidden = true;
+    composeOverlay.hidden = true;
+    controls.enabled = true;
+    resize();
+  }
+
+  document.getElementById('composeBack').addEventListener('click', closeComposeMode);
+
+  document.querySelectorAll('.aspect-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const r = btn.dataset.ratio;
+      if (r === 'free') {
+        cropAspect = null;
+        customRatioWrap.hidden = true;
+        setActiveAspectButton('free');
+        cropRect = clampRect(cropRect);
+        updateFrameDOM();
+      } else if (r === 'custom') {
+        customRatioWrap.hidden = false;
+        setActiveAspectButton('custom');
+        customRatioWInput.focus();
+        cropRect = clampRect(cropRect);
+        updateFrameDOM();
+      } else {
+        customRatioWrap.hidden = true;
+        setActiveAspectButton(r);
+        applyAspect(parseFloat(r));
+      }
+    });
+  });
+
+  function applyCustomRatio () {
+    const w = parseFloat(customRatioWInput.value);
+    const h = parseFloat(customRatioHInput.value);
+    if (w > 0 && h > 0) applyAspect(w / h);
+  }
+  customRatioWInput.addEventListener('change', applyCustomRatio);
+  customRatioHInput.addEventListener('change', applyCustomRatio);
+
+  function pointFromEvent (e) {
+    const wrapRect = canvas.parentElement.getBoundingClientRect();
+    return { x: e.clientX - wrapRect.left, y: e.clientY - wrapRect.top };
+  }
+
+  cropFrameEl.addEventListener('pointerdown', (e) => {
+    if (composeMode !== 'frame' || e.target !== cropFrameEl) return;
+    e.preventDefault();
+    cropFrameEl.setPointerCapture(e.pointerId);
+    const start = pointFromEvent(e);
+    const startRect = { ...cropRect };
+    function onMove (ev) {
+      const cur = pointFromEvent(ev);
+      cropRect = clampRect({
+        x: startRect.x + (cur.x - start.x),
+        y: startRect.y + (cur.y - start.y),
+        w: startRect.w, h: startRect.h
+      });
+      updateFrameDOM();
+    }
+    function onUp () {
+      cropFrameEl.removeEventListener('pointermove', onMove);
+      cropFrameEl.removeEventListener('pointerup', onUp);
+    }
+    cropFrameEl.addEventListener('pointermove', onMove);
+    cropFrameEl.addEventListener('pointerup', onUp);
+  });
+
+  document.querySelectorAll('.crop-handle').forEach((handle) => {
+    handle.addEventListener('pointerdown', (e) => {
+      if (composeMode !== 'frame') return;
+      e.preventDefault();
+      e.stopPropagation();
+      handle.setPointerCapture(e.pointerId);
+      const corner = handle.dataset.handle;
+      const startRect = { ...cropRect };
+      const anchor = {
+        x: corner.includes('l') ? startRect.x + startRect.w : startRect.x,
+        y: corner.includes('t') ? startRect.y + startRect.h : startRect.y
+      };
+      function onMove (ev) {
+        const cur = pointFromEvent(ev);
+        let w = Math.abs(cur.x - anchor.x);
+        let h = Math.abs(cur.y - anchor.y);
+        if (cropAspect) h = w / cropAspect;
+        w = Math.max(40, w);
+        h = Math.max(40, h);
+        const x = cur.x < anchor.x ? anchor.x - w : anchor.x;
+        const y = cur.y < anchor.y ? anchor.y - h : anchor.y;
+        cropRect = clampRect({ x, y, w, h });
+        updateFrameDOM();
+      }
+      function onUp () {
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+      }
+      handle.addEventListener('pointermove', onMove);
+      handle.addEventListener('pointerup', onUp);
+    });
+  });
+
+  window.addEventListener('resize', () => {
+    if (!composeOverlay.hidden) { clampRect(cropRect); updateFrameDOM(); }
+  });
+
+  document.getElementById('composeSave').addEventListener('click', () => {
+    const wrap = canvas.parentElement;
+    const cssW = wrap.clientWidth, cssH = wrap.clientHeight;
+    const TARGET_LONG = 1600;
+    const k = Math.max(1, TARGET_LONG / Math.max(cropRect.w, cropRect.h));
+
+    const originalGridVisible = grid.visible;
+    const originalBg = scene.background;
+    const originalClearAlpha = renderer.getClearAlpha();
+    grid.visible = toggleGridEl.checked;
+    if (toggleTransparentEl.checked) {
+      scene.background = null;
+      renderer.setClearAlpha(0);
+    }
+
+    const bigW = Math.max(1, Math.round(cssW * k));
+    const bigH = Math.max(1, Math.round(cssH * k));
+    renderer.setPixelRatio(1);
+    renderer.setSize(bigW, bigH, false);
+    camera.aspect = cssW / cssH;
+    camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+
+    const sx = cropRect.x * k, sy = cropRect.y * k, sw = cropRect.w * k, sh = cropRect.h * k;
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = Math.max(1, Math.round(sw));
+    outCanvas.height = Math.max(1, Math.round(sh));
+    outCanvas.getContext('2d').drawImage(renderer.domElement, sx, sy, sw, sh, 0, 0, outCanvas.width, outCanvas.height);
+
+    const url = outCanvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'pose-reference.png';
+    a.click();
+
+    grid.visible = originalGridVisible;
+    scene.background = originalBg;
+    renderer.setClearAlpha(originalClearAlpha);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(cssW, cssH, false);
+    camera.aspect = cssW / cssH;
+    camera.updateProjectionMatrix();
+  });
+
+  document.getElementById('saveJson').addEventListener('click', () => {
+    const json = JSON.stringify(serializeState(), null, 2);
+    const a = document.createElement('a');
+    a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
+    a.download = 'pose-scene.json';
+    a.click();
+  });
+
+  const loadJsonFile = document.getElementById('loadJsonFile');
+  document.getElementById('loadJson').addEventListener('click', () => {
+    loadJsonFile.value = '';
+    loadJsonFile.click();
+  });
+  loadJsonFile.addEventListener('change', () => {
+    const file = loadJsonFile.files && loadJsonFile.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const state = JSON.parse(String(reader.result));
+        pushUndoSnapshot();
+        applyState(state);
+      } catch (err) {
+        alert('JSONファイルの読み込みに失敗しました。ファイルの内容を確認してください。');
+      }
+    };
+    reader.readAsText(file);
+  });
+
+  const panelEl = document.querySelector('.panel');
+  const gutterEl = document.querySelector('.panel-gutter');
+  if (panelEl && gutterEl) {
+    let dragging = false;
+    let lastY = 0;
+    gutterEl.addEventListener('pointerdown', (e) => {
+      dragging = true;
+      lastY = e.clientY;
+      gutterEl.setPointerCapture(e.pointerId);
+    });
+    gutterEl.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      panelEl.scrollTop -= (e.clientY - lastY);
+      lastY = e.clientY;
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach((evt) => {
+      gutterEl.addEventListener(evt, () => { dragging = false; });
+    });
+  }
+
+  addFigure('mannequin');
+}
+
+window.addEventListener('DOMContentLoaded', main);
+</script>
+</body>
+</html>
